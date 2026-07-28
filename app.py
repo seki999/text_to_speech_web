@@ -399,7 +399,11 @@ def parse_dialogue(text: str) -> List[Tuple[str, str]]:
         ("Speaker 2", "答案正文"),
     ]
 
-    Speaker 标签不会进入正文，所以不会被朗读。
+    规则：
+    1. 带有 Speaker 1：或 Speaker 2：的句子，使用对应声音。
+    2. 没有 Speaker 标签的句子，默认使用 Speaker 1 女声。
+    3. Speaker 标签不会进入正文，所以不会被朗读。
+    4. 没有标签的连续多行会合并为同一个 Speaker 1 语音段。
     """
 
     if not text or not text.strip():
@@ -407,53 +411,72 @@ def parse_dialogue(text: str) -> List[Tuple[str, str]]:
 
     normalized_text = normalize_dialogue_text(text)
 
-    pattern = re.compile(
-        r"(Speaker\s*[12])\s*[：:]\s*"
-        r"(.*?)"
-        r"(?=(?:\n\s*)?Speaker\s*[12]\s*[：:]|\Z)",
-        flags=re.IGNORECASE | re.DOTALL,
+    # 在每一个 Speaker 标签前强制换行，兼容多个说话者写在同一行的情况。
+    normalized_text = re.sub(
+        r"(?<!^)\s*(?=Speaker\s*[12]：)",
+        "\n",
+        normalized_text,
+        flags=re.IGNORECASE,
     )
 
-    matches = pattern.findall(normalized_text)
-
     dialogue_items: List[Tuple[str, str]] = []
+    current_speaker = "Speaker 1"
+    current_content_parts: List[str] = []
 
-    for raw_speaker, raw_content in matches:
-        speaker_number_match = re.search(r"[12]", raw_speaker)
+    speaker_line_pattern = re.compile(
+        r"^\s*(Speaker\s*[12])\s*[：:]\s*(.*)$",
+        flags=re.IGNORECASE,
+    )
 
-        if speaker_number_match is None:
-            continue
+    def append_current_content() -> None:
+        """保存当前累计的正文。"""
+        if not current_content_parts:
+            return
 
-        speaker_number = speaker_number_match.group()
-        speaker = f"Speaker {speaker_number}"
-
-        content = re.sub(
-            r"\s*\n+\s*",
-            "，",
-            raw_content,
+        content = "，".join(
+            part.strip(" ，、")
+            for part in current_content_parts
+            if part and part.strip(" ，、")
         )
-
-        content = re.sub(
-            r"\s+",
-            " ",
-            content,
-        )
-
-        content = content.strip(" ，、")
+        content = re.sub(r"\s+", " ", content).strip(" ，、")
 
         if content:
-            dialogue_items.append(
-                (
-                    speaker,
-                    content,
-                )
-            )
+            dialogue_items.append((current_speaker, content))
+
+        current_content_parts.clear()
+
+    for raw_line in normalized_text.split("\n"):
+        line = raw_line.strip()
+
+        if not line:
+            continue
+
+        match = speaker_line_pattern.match(line)
+
+        if match:
+            # 遇到新的 Speaker 标签前，先保存上一段内容。
+            append_current_content()
+
+            speaker_number_match = re.search(r"[12]", match.group(1))
+            if speaker_number_match is None:
+                current_speaker = "Speaker 1"
+            else:
+                current_speaker = f"Speaker {speaker_number_match.group()}"
+
+            content = match.group(2).strip(" ，、")
+            if content:
+                current_content_parts.append(content)
+        else:
+            # 没有 Speaker 标签：默认按照 Speaker 1 女声朗读。
+            # 如果上一段本身有明确标签，则先结束上一段，避免错误继承 Speaker 2。
+            append_current_content()
+            current_speaker = "Speaker 1"
+            current_content_parts.append(line)
+
+    append_current_content()
 
     if not dialogue_items:
-        raise gr.Error(
-            "没有识别到有效对话。"
-            "请确保每段以“Speaker 1：”或“Speaker 2：”开头。"
-        )
+        raise gr.Error("没有识别到可以朗读的文本。")
 
     return dialogue_items
 
@@ -864,6 +887,7 @@ Speaker 2：参考答案内容
 
 Speaker 1 使用女声，Speaker 2 使用男声。  
 实际朗读时不会读出 Speaker 1 和 Speaker 2。
+没有 Speaker 标签的句子默认使用 Speaker 1 女声朗读。
 """
         )
 
