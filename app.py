@@ -550,7 +550,13 @@ async def generate_dialogue_tts_async(
                 current_rate = int(speaker_2_rate)
 
             # 只朗读正文，不朗读 Speaker 标签
-            speech_text = content
+            # 同时忽略英文方括号 [] 及其中的内容，例如：[ˈwɑːloʊ]
+            speech_text = re.sub(r"\[[^\]]*\]", "", content)
+            # 清理删除方括号内容后可能产生的多余空格
+            speech_text = re.sub(r"\s+", " ", speech_text).strip()
+
+            if not speech_text:
+                continue
 
             segment_path = os.path.join(
                 temp_dir,
