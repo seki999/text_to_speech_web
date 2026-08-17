@@ -34,12 +34,11 @@ VOICE_MAP = {
 # 双人对话语音设置
 # =========================
 
-DIALOGUE_VOICE_MAP = {
-    # Speaker 1：女声
-    "Speaker 1": "zh-CN-XiaoxiaoNeural",
-
-    # Speaker 2：男声
-    "Speaker 2": "zh-CN-YunxiNeural",
+DIALOGUE_VOICE_OPTIONS = {
+    "中文女声": "zh-CN-XiaoxiaoNeural",
+    "中文男声": "zh-CN-YunxiNeural",
+    "英文女声": "en-US-JennyNeural",
+    "英文男声": "en-US-GuyNeural",
 }
 
 
@@ -190,7 +189,7 @@ def parse_dialogue(text: str) -> List[Tuple[str, str]]:
 
     规则：
     1. 带有 Speaker 1：或 Speaker 2：的句子，使用对应声音。
-    2. 没有 Speaker 标签的句子，默认使用 Speaker 1 女声。
+    2. 没有 Speaker 标签的句子，默认使用 Speaker 1 当前选择的声音。
     3. Speaker 标签不会进入正文，所以不会被朗读。
     4. 没有标签的连续多行会合并为同一个 Speaker 1 语音段。
     """
@@ -256,7 +255,7 @@ def parse_dialogue(text: str) -> List[Tuple[str, str]]:
             if content:
                 current_content_parts.append(content)
         else:
-            # 没有 Speaker 标签：默认按照 Speaker 1 女声朗读。
+            # 没有 Speaker 标签：默认按照 Speaker 1 当前选择的声音朗读。
             # 如果上一段本身有明确标签，则先结束上一段，避免错误继承 Speaker 2。
             append_current_content()
             current_speaker = "Speaker 1"
@@ -295,13 +294,20 @@ def format_dialogue_preview(
 
 async def generate_dialogue_tts_async(
     dialogue_text: str,
+    speaker_1_voice_name: str,
+    speaker_2_voice_name: str,
     speaker_1_rate: int,
     speaker_2_rate: int,
     pause_ms: int,
 ) -> Tuple[str, str]:
     """
-    Speaker 1 使用女声。
-    Speaker 2 使用男声。
+    Speaker 1 / Speaker 2 的声音可以分别选择。
+
+    可选声音：
+    - 中文女声
+    - 中文男声
+    - 英文女声
+    - 英文男声
 
     注意：
     实际朗读时，只朗读冒号后面的正文。
@@ -326,17 +332,19 @@ async def generate_dialogue_tts_async(
 
     try:
         for index, (speaker, content) in enumerate(dialogue_items):
-            voice = DIALOGUE_VOICE_MAP.get(speaker)
+            if speaker == "Speaker 1":
+                selected_voice_name = speaker_1_voice_name
+                current_rate = int(speaker_1_rate)
+            else:
+                selected_voice_name = speaker_2_voice_name
+                current_rate = int(speaker_2_rate)
+
+            voice = DIALOGUE_VOICE_OPTIONS.get(selected_voice_name)
 
             if voice is None:
                 raise gr.Error(
-                    f"没有设置 {speaker} 对应的声音。"
+                    f"没有找到声音选项：{selected_voice_name}"
                 )
-
-            if speaker == "Speaker 1":
-                current_rate = int(speaker_1_rate)
-            else:
-                current_rate = int(speaker_2_rate)
 
             # 只朗读正文，不朗读 Speaker 标签
             # 同时忽略英文方括号 [] 及其中的内容，例如：[ˈwɑːloʊ]
@@ -418,6 +426,8 @@ async def generate_dialogue_tts_async(
 
 def dialogue_to_speech(
     dialogue_text: str,
+    speaker_1_voice_name: str,
+    speaker_2_voice_name: str,
     speaker_1_rate: int,
     speaker_2_rate: int,
     pause_ms: int,
@@ -430,6 +440,8 @@ def dialogue_to_speech(
         preview_text, audio_path = asyncio.run(
             generate_dialogue_tts_async(
                 dialogue_text=dialogue_text,
+                speaker_1_voice_name=speaker_1_voice_name,
+                speaker_2_voice_name=speaker_2_voice_name,
                 speaker_1_rate=speaker_1_rate,
                 speaker_2_rate=speaker_2_rate,
                 pause_ms=pause_ms,
@@ -474,7 +486,7 @@ with gr.Blocks(
 支持以下功能：
 
 1. 普通文本转语音
-2. Speaker 1 女声、Speaker 2 男声的双人对话语音
+2. Speaker 1 / Speaker 2 可分别选择中文或英文、男声或女声的双人对话语音
 
 注意：双人对话中不会朗读 Speaker 1 和 Speaker 2；英文方括号 [ ] 及其中内容也不会朗读。
 """
@@ -548,9 +560,9 @@ with gr.Blocks(
 Speaker 1：问题内容  
 Speaker 2：参考答案内容
 
-Speaker 1 使用女声，Speaker 2 使用男声。  
+Speaker 1 和 Speaker 2 都可以独立选择：中文女声、中文男声、英文女声、英文男声。  
 实际朗读时不会读出 Speaker 1 和 Speaker 2。
-没有 Speaker 标签的句子默认使用 Speaker 1 女声朗读。
+没有 Speaker 标签的句子默认按照 Speaker 1 当前选择的声音朗读。
 """
         )
 
@@ -566,12 +578,25 @@ Speaker 1 使用女声，Speaker 2 使用男声。
         )
 
         with gr.Row():
+            speaker_1_voice = gr.Dropdown(
+                choices=list(DIALOGUE_VOICE_OPTIONS.keys()),
+                value="英文女声",
+                label="Speaker 1 声音",
+            )
+
+            speaker_2_voice = gr.Dropdown(
+                choices=list(DIALOGUE_VOICE_OPTIONS.keys()),
+                value="中文男声",
+                label="Speaker 2 声音",
+            )
+
+        with gr.Row():
             speaker_1_rate = gr.Slider(
                 minimum=-50,
                 maximum=50,
                 value=0,
                 step=5,
-                label="Speaker 1 女声语速",
+                label="Speaker 1 语速",
             )
 
             speaker_2_rate = gr.Slider(
@@ -579,7 +604,7 @@ Speaker 1 使用女声，Speaker 2 使用男声。
                 maximum=50,
                 value=0,
                 step=5,
-                label="Speaker 2 男声语速",
+                label="Speaker 2 语速",
             )
 
         dialogue_pause = gr.Slider(
@@ -613,6 +638,8 @@ Speaker 1 使用女声，Speaker 2 使用男声。
             fn=dialogue_to_speech,
             inputs=[
                 dialogue_input,
+                speaker_1_voice,
+                speaker_2_voice,
                 speaker_1_rate,
                 speaker_2_rate,
                 dialogue_pause,
