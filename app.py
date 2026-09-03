@@ -43,7 +43,7 @@ DIALOGUE_VOICE_OPTIONS = {
 
 
 # 对话之间默认停顿时间，单位：毫秒
-DIALOGUE_PAUSE_MS = 450
+DIALOGUE_PAUSE_MS = 150
 
 
 # =========================
@@ -586,7 +586,7 @@ Speaker 1 和 Speaker 2 都可以独立选择：中文女声、中文男声、�
 
             speaker_2_voice = gr.Dropdown(
                 choices=list(DIALOGUE_VOICE_OPTIONS.keys()),
-                value="中文男声",
+                value="中文女声",
                 label="Speaker 2 声音",
             )
 
@@ -602,7 +602,7 @@ Speaker 1 和 Speaker 2 都可以独立选择：中文女声、中文男声、�
             speaker_2_rate = gr.Slider(
                 minimum=-50,
                 maximum=50,
-                value=0,
+                value=15,
                 step=5,
                 label="Speaker 2 语速",
             )
