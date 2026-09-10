@@ -5,7 +5,91 @@ import uuid
 import os
 import re
 import shutil
+from pathlib import Path
 from typing import List, Tuple, Optional
+
+
+# =========================
+# FFmpeg 自动配置
+# =========================
+
+def configure_ffmpeg() -> None:
+    """
+    自动查找 FFmpeg / ffprobe 并加入当前 Python 进程的 PATH。
+
+    查找顺序：
+    1. 如果系统 PATH 已经可以找到 ffmpeg 和 ffprobe，直接使用。
+    2. 查找 winget 默认安装目录：
+       %LOCALAPPDATA%\Microsoft\WinGet\Packages
+    3. 如果仍然找不到，抛出清晰错误信息。
+
+    这样可以避免 pydub 在读取 MP3 时出现：
+    Couldn't find ffprobe or avprobe
+    FileNotFoundError: [WinError 2]
+    """
+
+    # 如果系统已经能找到，则无需处理
+    if shutil.which("ffmpeg") and shutil.which("ffprobe"):
+        return
+
+    local_app_data = os.environ.get("LOCALAPPDATA")
+
+    if not local_app_data:
+        raise RuntimeError(
+            "无法读取 LOCALAPPDATA 环境变量，因此无法自动定位 FFmpeg。"
+        )
+
+    winget_packages_dir = (
+        Path(local_app_data)
+        / "Microsoft"
+        / "WinGet"
+        / "Packages"
+    )
+
+    if winget_packages_dir.exists():
+        ffmpeg_candidates = list(
+            winget_packages_dir.glob(
+                "Gyan.FFmpeg_*/*/bin/ffmpeg.exe"
+            )
+        )
+
+        # 某些 winget 目录层级可能不同，再做一次递归兜底搜索
+        if not ffmpeg_candidates:
+            ffmpeg_candidates = list(
+                winget_packages_dir.rglob("ffmpeg.exe")
+            )
+
+        for ffmpeg_exe in ffmpeg_candidates:
+            ffmpeg_bin = ffmpeg_exe.parent
+            ffprobe_exe = ffmpeg_bin / "ffprobe.exe"
+
+            if ffprobe_exe.exists():
+                os.environ["PATH"] = (
+                    str(ffmpeg_bin)
+                    + os.pathsep
+                    + os.environ.get("PATH", "")
+                )
+                break
+
+    ffmpeg_path = shutil.which("ffmpeg")
+    ffprobe_path = shutil.which("ffprobe")
+
+    if not ffmpeg_path or not ffprobe_path:
+        raise RuntimeError(
+            "没有找到 FFmpeg 或 ffprobe。\n"
+            "请确认已经安装 FFmpeg，例如：\n"
+            "winget install --id Gyan.FFmpeg -e\n\n"
+            f"当前 ffmpeg：{ffmpeg_path}\n"
+            f"当前 ffprobe：{ffprobe_path}"
+        )
+
+    print(f"[FFmpeg] ffmpeg: {ffmpeg_path}")
+    print(f"[FFmpeg] ffprobe: {ffprobe_path}")
+
+
+# 必须在导入 pydub 之前配置 PATH，
+# 以确保 pydub 后续调用 ffmpeg / ffprobe 时能够找到可执行文件。
+configure_ffmpeg()
 
 from pydub import AudioSegment
 
