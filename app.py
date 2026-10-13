@@ -1,5 +1,5 @@
 import gradio as gr
-import edge_tts
+from tts_service import synthesize
 import asyncio
 import uuid
 import os
@@ -14,7 +14,7 @@ from typing import List, Tuple, Optional
 # =========================
 
 def configure_ffmpeg() -> None:
-    """
+    r"""
     自动查找 FFmpeg / ffprobe 并加入当前 Python 进程的 PATH。
 
     查找顺序：
@@ -139,6 +139,8 @@ async def generate_tts_with_voice_async(
     voice: str,
     rate: int,
     output_path: Optional[str] = None,
+    engine: str = "Edge 在线",
+    fallback: bool = False,
 ) -> str:
     """
     使用指定声音生成 MP3。
@@ -154,16 +156,9 @@ async def generate_tts_with_voice_async(
         filename = f"tts_{uuid.uuid4().hex}.mp3"
         output_path = os.path.join(OUTPUT_DIR, filename)
 
-    rate_text = f"{int(rate):+d}%"
-
-    communicate = edge_tts.Communicate(
-        text=text.strip(),
-        voice=voice,
-        rate=rate_text,
-        volume="+0%",
-    )
-
-    await communicate.save(output_path)
+    if engine == "Windows 离线" or fallback:
+        configure_ffmpeg()
+    await synthesize(text.strip(), voice, rate, output_path, engine, fallback, gr.Warning)
 
     return output_path
 
@@ -176,6 +171,8 @@ async def generate_tts_async(
     text: str,
     language: str,
     rate: int,
+    engine: str = "Edge 在线",
+    fallback: bool = False,
 ) -> str:
     """
     根据语言选择声音并生成普通语音。
@@ -193,6 +190,7 @@ async def generate_tts_async(
         text=text,
         voice=voice,
         rate=rate,
+        engine=engine, fallback=fallback,
     )
 
 
@@ -200,6 +198,8 @@ def text_to_speech(
     text: str,
     language: str,
     rate: int,
+    engine: str = "Edge 在线",
+    fallback: bool = False,
 ):
     """
     普通文本转语音。
@@ -211,6 +211,7 @@ def text_to_speech(
                 text=text,
                 language=language,
                 rate=rate,
+                engine=engine, fallback=fallback,
             )
         )
 
@@ -383,6 +384,8 @@ async def generate_dialogue_tts_async(
     speaker_1_rate: int,
     speaker_2_rate: int,
     pause_ms: int,
+    engine: str = "Edge 在线",
+    fallback: bool = False,
 ) -> Tuple[str, str]:
     """
     Speaker 1 / Speaker 2 的声音可以分别选择。
@@ -398,6 +401,7 @@ async def generate_dialogue_tts_async(
     不会朗读 Speaker 1 和 Speaker 2。
     """
 
+    configure_ffmpeg()
     dialogue_items = parse_dialogue(dialogue_text)
 
     session_id = uuid.uuid4().hex
@@ -449,6 +453,7 @@ async def generate_dialogue_tts_async(
                 voice=voice,
                 rate=current_rate,
                 output_path=segment_path,
+                engine=engine, fallback=fallback,
             )
 
             segment_paths.append(segment_path)
@@ -515,6 +520,8 @@ def dialogue_to_speech(
     speaker_1_rate: int,
     speaker_2_rate: int,
     pause_ms: int,
+    engine: str = "Edge 在线",
+    fallback: bool = False,
 ):
     """
     将已有双人对话转换成语音。
@@ -529,6 +536,7 @@ def dialogue_to_speech(
                 speaker_1_rate=speaker_1_rate,
                 speaker_2_rate=speaker_2_rate,
                 pause_ms=pause_ms,
+                engine=engine, fallback=fallback,
             )
         )
 
@@ -575,6 +583,10 @@ with gr.Blocks(
 注意：双人对话中不会朗读 Speaker 1 和 Speaker 2；英文方括号 [ ] 及其中内容也不会朗读。
 """
     )
+
+    engine_selector = gr.Dropdown(choices=["Edge 在线", "Windows 离线"], value="Edge 在线", label="语音引擎")
+    offline_fallback = gr.Checkbox(value=False, label="在线失败时自动使用 Windows 离线声音")
+    gr.Markdown("离线声音需要本机安装相应语言的 System.Speech 语音包；可能只有一种性别，音质和语速与在线声音不同。")
 
     # =========================
     # Tab 1：普通文本转语音
@@ -625,6 +637,7 @@ with gr.Blocks(
                 text_input,
                 language,
                 rate,
+                engine_selector, offline_fallback,
             ],
             outputs=[
                 audio_output,
@@ -727,6 +740,7 @@ Speaker 1 和 Speaker 2 都可以独立选择：中文女声、中文男声、�
                 speaker_1_rate,
                 speaker_2_rate,
                 dialogue_pause,
+                engine_selector, offline_fallback,
             ],
             outputs=[
                 dialogue_preview_output,

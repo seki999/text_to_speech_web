@@ -1,3 +1,5 @@
-gradio
-edge-tts
-openai
+edge-tts>=7.2.8,<8
+aiohttp>=3.12,<4
+gradio>=6.26,<7
+pydub==0.25.1
+audioop-lts>=0.2.2,<1; python_version >= "3.13"

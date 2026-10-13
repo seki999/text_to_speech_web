@@ -1,2 +1,7 @@
+.venv/
+__pycache__/
+.pytest_cache/
 outputs/
+*.mp3
+*.wav
 openai_api_key.txt
